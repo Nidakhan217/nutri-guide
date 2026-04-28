@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { signInWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
+import { signInWithEmailAndPassword, signInWithPopup, signInWithRedirect } from 'firebase/auth';
 import { auth, googleProvider } from '../lib/firebase';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -46,15 +46,35 @@ export default function Login() {
   const handleGoogle = async () => {
     setGoogleLoading(true);
     try {
+      // Try popup first (best UX)
       await signInWithPopup(auth, googleProvider);
       toast.success('Welcome back! 🥗');
       navigate('/dashboard');
     } catch (err) {
-      if (err.code !== 'auth/popup-closed-by-user') {
+      console.error('Google sign-in error:', err.code, err.message);
+      if (err.code === 'auth/popup-blocked') {
+        // Popup was blocked — fall back to redirect (page will reload, PublicRoute handles nav)
+        try {
+          toast('Redirecting to Google sign-in…', { icon: '🔄' });
+          await signInWithRedirect(auth, googleProvider);
+        } catch (redirectErr) {
+          console.error('Redirect fallback error:', redirectErr);
+          toast.error('Google sign-in failed. Please allow popups or try again.');
+          setGoogleLoading(false);
+        }
+      } else if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+        // User dismissed — no toast needed
+        setGoogleLoading(false);
+      } else if (err.code === 'auth/unauthorized-domain') {
+        toast.error('This domain is not authorized for Google sign-in.');
+        setGoogleLoading(false);
+      } else if (err.code === 'auth/operation-not-allowed') {
+        toast.error('Google sign-in is not enabled. Please contact support.');
+        setGoogleLoading(false);
+      } else {
         toast.error('Google sign-in failed. Please try again.');
+        setGoogleLoading(false);
       }
-    } finally {
-      setGoogleLoading(false);
     }
   };
 

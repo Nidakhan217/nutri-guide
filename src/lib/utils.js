@@ -53,19 +53,27 @@ export function getMacroColor(macro) {
 }
 
 export function parsePlanJSON(raw) {
+  if (!raw) return null;
   try {
+    // Step 1: Strip any markdown code fences and trim
     const cleaned = raw
-      .replace(/```json\n?/g, '')
-      .replace(/```\n?/g, '')
+      .replace(/```json\s*/gi, '')
+      .replace(/```\s*/g, '')
       .trim();
     return JSON.parse(cleaned);
   } catch {
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      try {
-        return JSON.parse(jsonMatch[0]);
-      } catch {
-        return null;
+    try {
+      // Step 2: Find the outermost { ... } block (handles text before/after JSON)
+      const start = raw.indexOf('{');
+      const end = raw.lastIndexOf('}');
+      if (start !== -1 && end !== -1 && end > start) {
+        return JSON.parse(raw.slice(start, end + 1));
+      }
+    } catch {
+      // Step 3: Last resort — regex-based extraction
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try { return JSON.parse(jsonMatch[0]); } catch { /* falls through */ }
       }
     }
     return null;

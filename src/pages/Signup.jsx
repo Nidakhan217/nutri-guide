@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { createUserWithEmailAndPassword, signInWithPopup, updateProfile } from 'firebase/auth';
+import { createUserWithEmailAndPassword, signInWithPopup, signInWithRedirect, updateProfile } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db, googleProvider } from '../lib/firebase';
 import { useForm } from 'react-hook-form';
@@ -84,6 +84,7 @@ export default function Signup() {
   const handleGoogle = async () => {
     setGoogleLoading(true);
     try {
+      // Try popup first (best UX)
       const cred = await signInWithPopup(auth, googleProvider);
       await setDoc(doc(db, 'users', cred.user.uid), {
         uid: cred.user.uid,
@@ -96,11 +97,31 @@ export default function Signup() {
       toast.success('Welcome to NutriAI! 🥗');
       navigate('/onboarding');
     } catch (err) {
-      if (err.code !== 'auth/popup-closed-by-user') {
+      console.error('Google sign-in error:', err.code, err.message);
+      if (err.code === 'auth/popup-blocked') {
+        // Popup blocked — fall back to redirect (page reloads, AuthContext handles profile creation)
+        try {
+          toast('Redirecting to Google sign-in…', { icon: '🔄' });
+          await signInWithRedirect(auth, googleProvider);
+          // Page will reload; PublicRoute auto-navigates authenticated users
+        } catch (redirectErr) {
+          console.error('Redirect fallback error:', redirectErr);
+          toast.error('Google sign-in failed. Please allow popups or try again.');
+          setGoogleLoading(false);
+        }
+      } else if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+        // User dismissed — no toast needed
+        setGoogleLoading(false);
+      } else if (err.code === 'auth/unauthorized-domain') {
+        toast.error('This domain is not authorized for Google sign-in.');
+        setGoogleLoading(false);
+      } else if (err.code === 'auth/operation-not-allowed') {
+        toast.error('Google sign-in is not enabled. Please contact support.');
+        setGoogleLoading(false);
+      } else {
         toast.error('Google sign-in failed. Please try again.');
+        setGoogleLoading(false);
       }
-    } finally {
-      setGoogleLoading(false);
     }
   };
 

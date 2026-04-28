@@ -52,20 +52,34 @@ export default function Generate() {
       });
 
       const parsed = parsePlanJSON(raw);
-      if (!parsed) { setPhase('error'); toast.error('Failed to parse plan. Retrying may help.'); return; }
+      if (!parsed) {
+        setPhase('error');
+        toast.error('Failed to parse plan. Please try again.');
+        return;
+      }
 
+      // ✅ Show plan immediately — success is guaranteed at this point
       setPlan(parsed);
       setPhase('done');
-
-      // Save to Firestore
-      await addDoc(collection(db, 'plans', user.uid, 'history'), {
-        plan: parsed,
-        createdAt: serverTimestamp(),
-      });
-      await setDoc(doc(db, 'users', user.uid), { currentPlan: parsed, planGeneratedAt: serverTimestamp() }, { merge: true });
       toast.success('Your personalized plan is ready! 🎉');
+
+      // Save to Firestore in the background — failure here must NOT affect the displayed plan
+      try {
+        await addDoc(collection(db, 'plans', user.uid, 'history'), {
+          plan: parsed,
+          createdAt: serverTimestamp(),
+        });
+        await setDoc(
+          doc(db, 'users', user.uid),
+          { currentPlan: parsed, planGeneratedAt: serverTimestamp() },
+          { merge: true }
+        );
+      } catch (saveErr) {
+        // Save failed silently — plan is still shown; user can retry from the Plan page
+        console.warn('Plan saved locally but Firestore sync failed:', saveErr?.code || saveErr?.message);
+      }
     } catch (err) {
-      console.error(err);
+      console.error('Diet plan generation error:', err?.code || err?.message, err);
       setPhase('error');
       toast.error('Generation failed. Please try again.');
     }
@@ -121,7 +135,18 @@ export default function Generate() {
             <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Something went wrong</h2>
             <p className="text-slate-500 dark:text-slate-400 mb-6">We couldn't generate your plan. This might be a temporary issue.</p>
             <div className="flex gap-3 justify-center">
-              <button onClick={() => { setPhase('loading'); setRawStream(''); startGeneration(); }} className="btn-primary">Try Again</button>
+              <button
+                onClick={() => {
+                  setRawStream('');
+                  setMsgIdx(0);
+                  setPlan(null);
+                  setPhase('loading');
+                  startGeneration();
+                }}
+                className="btn-primary"
+              >
+                Try Again
+              </button>
               <button onClick={() => navigate('/dashboard')} className="btn-secondary">Go to Dashboard</button>
             </div>
           </div>
